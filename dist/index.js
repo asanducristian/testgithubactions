@@ -1,2 +1,2 @@
 "use strict";
-console.log("Hello from TS build in GitHub Actionsa");
+console.log("Hello from TS build in GitHub Actions");
