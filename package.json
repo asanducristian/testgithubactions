@@ -1,6 +1,6 @@
 {
   "name": "node-gh-actions-playground",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
