@@ -2,8 +2,7 @@ name: Release on main (tag + release)
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch: {}
+    branches: ["main"]
 
 permissions:
   contents: write
@@ -11,9 +10,6 @@ permissions:
 concurrency:
   group: release-main
   cancel-in-progress: false
-
-env:
-  NODE_VERSION: 20
 
 jobs:
   build:
@@ -32,7 +28,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 20
           cache: npm
 
       - name: Install
@@ -49,10 +45,7 @@ jobs:
         shell: bash
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          if [ -z "$VERSION" ]; then
-            echo "ERROR: Could not read version from package.json" >&2
-            exit 1
-          fi
+          [ -n "$VERSION" ] || (echo "ERROR: No version" >&2 && exit 1)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -61,10 +54,9 @@ jobs:
         shell: bash
         run: |
           TAG="${{ steps.meta.outputs.tag }}"
-          # Query remote tags directly (more reliable than local state).
           if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag ${TAG} already exists on origin."
+            echo "Tag ${TAG} exists on origin."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
@@ -100,23 +92,23 @@ jobs:
         with:
           name: release-assets
 
-      - name: Create and push annotated tag
+      - name: Tag + push
         shell: bash
         run: |
           TAG="${{ needs.build.outputs.tag }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Safety: re-check remote right before tagging (race protection).
+          # race-safe check
           if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
-            echo "Tag ${TAG} already exists on origin; aborting."
+            echo "Tag ${TAG} already exists; aborting."
             exit 1
           fi
 
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
 
-      - name: Create GitHub Release and upload assets
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.build.outputs.tag }}
@@ -126,7 +118,7 @@ jobs:
             dist-${{ needs.build.outputs.tag }}.tar.gz
             dist-${{ needs.build.outputs.tag }}.tar.gz.sha256
 
-  bump_version_with_approval:
+  bump_build_release_with_approval:
     needs: build
     if: needs.build.outputs.tag_exists == 'true'
     runs-on: ubuntu-latest
@@ -143,7 +135,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 20
           cache: npm
 
       - name: Configure git identity
@@ -153,23 +145,64 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Bump patch version + commit + push
+        id: bump
         shell: bash
         run: |
           npm version patch --no-git-tag-version
 
+          # commit bump
           git add package.json package-lock.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "ERROR: Version bump produced no changes." >&2
             exit 1
           fi
+          git commit -m "chore(release): bump version"
 
-          # IMPORTANT: prevent re-trigger loops using skip for Actions.
-          # GitHub Actions respects: [skip ci] and [ci skip] for workflow runs in many setups,
-          # but not universally. This is the best simple hedge.
-          git commit -m "chore(release): bump version [skip ci]"
+          # push bump commit to main (same run)
           git push origin HEAD:main
 
-      - name: Re-run release via workflow_dispatch (recommended)
+          # compute new tag
+          VERSION="$(node -p "require('./package.json').version")"
+          [ -n "$VERSION" ] || (echo "ERROR: No bumped version" >&2 && exit 1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure bumped tag does not exist on remote
         shell: bash
         run: |
-          echo "Version bumped. The next push to main will attempt release again."
+          TAG="${{ steps.bump.outputs.tag }}"
+          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
+            echo "ERROR: After bump, tag ${TAG} already exists. Refusing to release." >&2
+            exit 1
+          fi
+
+      - name: Install, test, build (bumped version)
+        shell: bash
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Create release assets (bumped)
+        shell: bash
+        run: |
+          TAG="${{ steps.bump.outputs.tag }}"
+          tar -czf "dist-${TAG}.tar.gz" dist/
+          sha256sum "dist-${TAG}.tar.gz" > "dist-${TAG}.tar.gz.sha256"
+
+      - name: Create and push tag (bumped)
+        shell: bash
+        run: |
+          TAG="${{ steps.bump.outputs.tag }}"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release (bumped)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.bump.outputs.tag }}
+          name: ${{ steps.bump.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist-${{ steps.bump.outputs.tag }}.tar.gz
+            dist-${{ steps.bump.outputs.tag }}.tar.gz.sha256
