@@ -1,0 +1,214 @@
+
+
+
+
+
+
+name: Release on main (tag + release)
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      tag_exists: ${{ steps.tagcheck.outputs.exists }}
+
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Determine version/tag
+        id: meta
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          [ -n "$VERSION" ] || (echo "ERROR: No version" >&2 && exit 1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag exists on remote
+        id: tagcheck
+        shell: bash
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${TAG} exists on origin."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create release assets
+        shell: bash
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          tar -czf "dist-${TAG}.tar.gz" dist/
+          sha256sum "dist-${TAG}.tar.gz" > "dist-${TAG}.tar.gz.sha256"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            dist-${{ steps.meta.outputs.tag }}.tar.gz
+            dist-${{ steps.meta.outputs.tag }}.tar.gz.sha256
+
+  release_if_new:
+    needs: build
+    if: needs.build.outputs.tag_exists == 'false'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+
+      - name: Tag + push
+        shell: bash
+        run: |
+          TAG="${{ needs.build.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # race-safe check
+          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
+            echo "Tag ${TAG} already exists; aborting."
+            exit 1
+          fi
+
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.tag }}
+          name: ${{ needs.build.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist-${{ needs.build.outputs.tag }}.tar.gz
+            dist-${{ needs.build.outputs.tag }}.tar.gz.sha256
+
+  bump_build_release_with_approval:
+    needs: build
+    if: needs.build.outputs.tag_exists == 'true'
+    runs-on: ubuntu-latest
+    environment: release-bump
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Configure git identity
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump patch version + commit + push
+        id: bump
+        shell: bash
+        run: |
+          npm version patch --no-git-tag-version
+
+          # commit bump
+          git add package.json package-lock.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "ERROR: Version bump produced no changes." >&2
+            exit 1
+          fi
+          git commit -m "chore(release): bump version"
+
+          # push bump commit to main (same run)
+          git push origin HEAD:main
+
+          # compute new tag
+          VERSION="$(node -p "require('./package.json').version")"
+          [ -n "$VERSION" ] || (echo "ERROR: No bumped version" >&2 && exit 1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure bumped tag does not exist on remote
+        shell: bash
+        run: |
+          TAG="${{ steps.bump.outputs.tag }}"
+          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
+            echo "ERROR: After bump, tag ${TAG} already exists. Refusing to release." >&2
+            exit 1
+          fi
+
+      - name: Install, test, build (bumped version)
+        shell: bash
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Create release assets (bumped)
+        shell: bash
+        run: |
+          TAG="${{ steps.bump.outputs.tag }}"
+          tar -czf "dist-${TAG}.tar.gz" dist/
+          sha256sum "dist-${TAG}.tar.gz" > "dist-${TAG}.tar.gz.sha256"
+
+      - name: Create and push tag (bumped)
+        shell: bash
+        run: |
+          TAG="${{ steps.bump.outputs.tag }}"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release (bumped)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.bump.outputs.tag }}
+          name: ${{ steps.bump.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist-${{ steps.bump.outputs.tag }}.tar.gz
+            dist-${{ steps.bump.outputs.tag }}.tar.gz.sha256
