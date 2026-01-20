@@ -1,38 +1,38 @@
 name: Deploy Production
 
 on:
-    workflow_dispatch:
-        inputs:
-            tag:
-                description: "Tag to deploy (e.g. v1.0.3)"
-                required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to deploy (e.g. v1.0.3)'
+        required: true
 
 permissions:
-    contents: read
+  contents: read
 
 concurrency:
-    group: deploy-prod
-    cancel-in-progress: false
+  group: deploy-prod
+  cancel-in-progress: false
 
 jobs:
-    deploy:
-        runs-on: ubuntu-latest
-        environment: production
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
 
-        steps:
-            - name: Determine release artifact name
-              shell: bash
-              run: |
-                  TAG="${{ inputs.tag }}"
-                  ARCHIVE="dist-${TAG}.tar.gz"
-                  CHECKSUM="dist-${TAG}.tar.gz.sha256"
+    steps:
+      - name: Determine release artifact name
+        shell: bash
+        run: |
+          TAG="${{ inputs.tag }}"
+          ARCHIVE="dist-${TAG}.tar.gz"
+          CHECKSUM="dist-${TAG}.tar.gz.sha256"
 
-                  echo "Release tag: ${TAG}"
-                  echo "Artifact to deploy:"
-                  echo "  ${ARCHIVE}"
-                  echo "Checksum file:"
-                  echo "  ${CHECKSUM}"
+          echo "Release tag: ${TAG}"
+          echo "Artifact to deploy:"
+          echo "  ${ARCHIVE}"
+          echo "Checksum file:"
+          echo "  ${CHECKSUM}"
 
-                  echo ""
-                  echo "Next step would be:"
-                  echo "scp ${ARCHIVE} user@server:/path/to/releases/"
+          echo ""
+          echo "Next step would be:"
+          echo "scp ${ARCHIVE} user@server:/path/to/releases/"

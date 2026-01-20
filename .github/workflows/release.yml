@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "If tag exists, bump patch automatically. If unchecked and tag exists, fail."
+        description: 'If tag exists, bump patch automatically. If unchecked and tag exists, fail.'
         type: boolean
         required: true
         default: false
