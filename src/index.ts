@@ -1,1 +1,1 @@
-console.log("Hello from TS build in GitHb Actonss");
+console.log("Hello from TS build in GitHub Actionss");
