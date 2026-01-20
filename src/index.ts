@@ -19,7 +19,6 @@ function greetUser(user: User): string {
 const processUsers = (users: User[]) => {
     return users.map((user) => {
         const greeting = greetUser(user);
-        console.log(greeting);
         return {
             ...user,
             processed: true,
