@@ -1,42 +1,42 @@
 name: Deploy Staging
 
 on:
-  push:
-    branches: [dev]
+    push:
+        branches: [dev]
 
 permissions:
-  contents: read
+    contents: read
 
 concurrency:
-  group: deploy-staging
-  cancel-in-progress: true
+    group: deploy-staging
+    cancel-in-progress: true
 
 jobs:
-  build_and_deploy:
-    runs-on: ubuntu-latest
-    environment: staging
+    build_and_deploy:
+        runs-on: ubuntu-latest
+        environment: staging
 
-    steps:
-      - uses: actions/checkout@v4
+        steps:
+            - uses: actions/checkout@v4
 
-      - name: Build
-        shell: bash
-        run: |
-          npm ci
-          npm run build
-          tar -czf dist-${GITHUB_SHA}.tar.gz dist
-          sha256sum dist-${GITHUB_SHA}.tar.gz > dist-${GITHUB_SHA}.tar.gz.sha256
+            - name: Build
+              shell: bash
+              run: |
+                  npm ci
+                  npm run build
+                  tar -czf dist-${GITHUB_SHA}.tar.gz dist
+                  sha256sum dist-${GITHUB_SHA}.tar.gz > dist-${GITHUB_SHA}.tar.gz.sha256
 
-      - name: Verify checksum
-        shell: bash
-        run: |
-          sha256sum -c dist-${GITHUB_SHA}.tar.gz.sha256
+            - name: Verify checksum
+              shell: bash
+              run: |
+                  sha256sum -c dist-${GITHUB_SHA}.tar.gz.sha256
 
-      - name: Deploy to staging (example placeholder)
-        shell: bash
-        run: |
-          ARCHIVE="dist-${GITHUB_SHA}.tar.gz"
-          echo "Deploying ${ARCHIVE} to staging..."
-          # Example:
-          # scp "${ARCHIVE}" user@staging:/path/releases/
-          # ssh user@staging 'cd /path && ./deploy.sh ...'
+            - name: Deploy to staging (example placeholder)
+              shell: bash
+              run: |
+                  ARCHIVE="dist-${GITHUB_SHA}.tar.gz"
+                  echo "Deploying ${ARCHIVE} to staging..."
+                  # Example:
+                  # scp "${ARCHIVE}" user@staging:/path/releases/
+                  # ssh user@staging 'cd /path && ./deploy.sh ...'

@@ -34,9 +34,9 @@ ESLint is configured for TypeScript and runs automatically:
 1. Make your changes
 2. Stage your files with `git add`
 3. Commit your changes with `git commit`
-   - Prettier will automatically format staged files
-   - ESLint will check for code quality issues
-   - Commit will be blocked if ESLint fails or warnings are present
+    - Prettier will automatically format staged files
+    - ESLint will check for code quality issues
+    - Commit will be blocked if ESLint fails or warnings are present
 4. Push your changes - CI will verify formatting and linting
 
 ## Pre-commit Hooks
