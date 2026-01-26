@@ -19,7 +19,7 @@ const users: User[] = [
 ];
 
 function greetUser(user: User): string {
-    return `Hello, ${user.name}! You are ${user.age} years old.`;
+    return `Hello, ${user.name}! You are ${user.age} year old.`;
 }
 
 const isValidUser = (user: User): boolean => {
